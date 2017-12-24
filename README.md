@@ -1,4 +1,4 @@
-# PiMSF - 60kHz MSF Time Signal Generator for Raspberry Pi
+# PiMSF - 60kHz MSF Time Signal for Raspberry Pi
 
 This is a small program for emulating the MSF Radio Time Signal using a Raspberry Pi.
 
@@ -16,7 +16,9 @@ To compile your own version, copy the Makefile and pimsf.c to the Pi.  You will 
 
 ### Compiling
 
+```
 $ make
+```
 
 ### Usage
 
