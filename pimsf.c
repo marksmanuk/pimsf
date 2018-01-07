@@ -1,10 +1,9 @@
 /******************************************************************************
-  60kHz MSF Time Signal Transmitter
-  by Mark Street <marksmanuk@gmail.com>
+  60kHz MSF Time Signal Transmitter for Raspberry Pi
+    by Mark Street <marksmanuk@gmail.com>
+      Stanley, Falkland Islands
 
-  Version 1.00 December 2017
-
-  Connect antenna to GPIO4 pin 7
+  Connect wire antenna to GPIO4 pin 7
 ******************************************************************************/
 
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
@@ -22,17 +21,16 @@
 #include <unistd.h>
 #include <errno.h>
 
-int verbose = 0;
+int verbose	= 0;
 const static int TIME_WAITMIN = 3330;
 const static int TIME_SKEWTX  = -13;
-
-int mem_fd;
-char *gpio_mem, *gpio_map;
-char *spi0_mem, *spi0_map;
 
 // I/O access
 volatile unsigned *gpio;
 volatile unsigned *allof7e;
+
+#define BCM2708_PERI_BASE	0x20000000
+#define GPIO_BASE	(BCM2708_PERI_BASE + 0x200000)
 
 // GPIO setup macros. Always use INP_GPIO(x) before using OUT_GPIO(x) or SET_GPIO_ALT(x,y)
 #define INP_GPIO(g) *(gpio+((g)/10)) &= ~(7<<(((g)%10)*3))
@@ -47,12 +45,9 @@ volatile unsigned *allof7e;
 #define SETBIT(base, bit) ACCESS(base) |= 1<<bit
 #define CLRBIT(base, bit) ACCESS(base) &= ~(1<<bit)
 
-#define CM_GP0CTL (0x7e101070)
-#define GPFSEL0 (0x7E200000)
-#define CM_GP0DIV (0x7e101074)
-#define CLKBASE (0x7E101000)
-#define DMABASE (0x7E007000)
-#define PWMBASE  (0x7e20C000) /* PWM controller */
+#define CM_GP0CTL 	(0x7E101070)
+#define CM_GP0DIV	(0x7E101074)
+#define GPFSEL0		(0x7E200000)
 
 struct GPCTL {
     char SRC         : 4;
@@ -81,6 +76,8 @@ void nsleep(unsigned long int period)
 
 void setup_gpclk0(int mash, int divi, int divf)
 {
+	int mem_fd;
+
     /* Open /dev/mem */
     if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC)) < 0)
 	{
@@ -90,22 +87,24 @@ void setup_gpclk0(int mash, int divi, int divf)
     
     allof7e = (unsigned *)mmap(
                   NULL,
-                  0x01000000,  //len
+                  0x01000000,		// Len
                   PROT_READ|PROT_WRITE,
                   MAP_SHARED,
                   mem_fd,
-                  0x20000000  //base
+                  BCM2708_PERI_BASE	// Base
               );
 
     if ((int)allof7e == -1)
 		exit(-1);
 
-	// FSEL4 alternate function 0 = GPCLK0
+	gpio = allof7e + 128*(4*1024);
+
+	// Configure GPIO4 FSEL4 = ALT0
     SETBIT(GPFSEL0, 14);
     CLRBIT(GPFSEL0, 13);
     CLRBIT(GPFSEL0, 12);
 
-	// Condigure clock control register, leave disabled
+	// Configure clock control register, leave disabled
     struct GPCTL setupword = {
 		1,		/* clock source */
 	   	0,		/* enable */
@@ -129,6 +128,8 @@ void setup_gpclk0(int mash, int divi, int divf)
 	ctl |= (1 << 4);
     ACCESS(CM_GP0CTL) = *((int*)&ctl);
 	nsleep(100);
+
+	close(mem_fd);
 }
 
 void clock_startstop(int state)
@@ -361,14 +362,14 @@ void send_timecode(int duration)
 
 		// Apply time correction should we lag system time:
 		int offset = TIME_SKEWTX - (tv.tv_usec/1000);
-//		printf("Delta %ld us, Offset %d us\n", tv.tv_usec, offset);
+		if (verbose)
+			printf("Time delta %ld us, Applying offset %d us\n", tv.tv_usec, offset);
 		
 		// Transmit message over 60s period:
 		key(0xff, offset);
 		for (int i=1; i<60; i++)
 		{
-			if (verbose)
-				printf("  Bit: %02d   A:%d B:%d\n", i, timecode[i].a, timecode[i].b);
+			// printf("  Bit: %02d   A:%d B:%d\n", i, timecode[i].a, timecode[i].b);
 			key((timecode[i].a << 4) + timecode[i].b);
 		}
 
